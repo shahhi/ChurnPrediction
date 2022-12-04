@@ -1,0 +1,411 @@
+---
+title: "FinalProject"
+output: html_document
+date: "2022-11-26"
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+cb_palette = c("#999999", "#E69F00", "#56B4E9", "#009E73",
+    "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+#load("lattice.RData")
+```
+
+
+Load some packages:
+```{r}
+library(dplyr)
+library(tidyverse)
+library(vcd)
+library(ggmosaic)
+library(leaps)
+library(broom)
+library(MASS)
+library(ggplot2)
+library(corrplot)
+library("ggplot2")                     
+library("GGally")
+```
+Dataset: 
+We have a dataset of 10000 rows with 14 attributes to perform our analysis and give recommendations to stem attrition. 
+
+
+```{r}
+data <- read.csv("ChurnModeling.csv")
+
+```
+
+```{r}
+data$Gender <- as.factor(data$Gender)
+data$Geography <- as.factor(data$Geography)
+data$HasChckng <- as.factor(data$HasChckng)
+data$IsActiveMember <- as.factor(data$IsActiveMember)
+summary(data)
+```
+Research Questions:
+We try to address this issue by performing exploratory analysis and answer the following questions:
+
+1)	Are all features important for determining client will churn or not?
+2)	How do various features impact the likelihood of churn?
+3)	Could we well describe the notions of churn using a simple logistic regression or do we need more complex models?
+
+Correlation between Numerical Values:
+
+```{r}
+cor_matrix <- subset(data, select = -c(RowNumber,CustomerId))
+cor_matrix<- cor_matrix %>% select_if(is.numeric) 
+
+ggpairs(cor_matrix)+theme_bw()
+
+# , upper = list(continuous = "density", combo = "box_no_facet"),lower = list(continuous = "points", combo = "dot_no_facet")
+```
+
+Credit Score
+```{r}
+ggplot(data, aes(x= CreditScore, fill=factor(Exited), color=factor(Exited))) +
+geom_histogram(position="identity", bins = 10)+
+  scale_fill_manual(values = cb_palette)
+```
+
+
+```{r}
+ggplot( aes(x=Exited, y= CreditScore, fill= factor(Exited) ), data = data) +
+    geom_boxplot() +
+    ggtitle("A boxplot with Credit Score") +
+    xlab("Exited")+
+  scale_fill_manual(values = cb_palette)
+```
+Geography 
+```{r}
+data %>% group_by(Geography, Exited) %>% summarise(Percent = round(n()/nrow(.),2)) %>% ggplot(aes(x = Geography, y = Percent, fill = factor(Exited))) + geom_bar(stat = "identity") + geom_text(aes(label = Percent * 100), vjust = 1.5, hjust = 0.5,color = "white", size = 5.0) + theme_minimal() +
+  scale_fill_manual(values = cb_palette) + scale_y_continuous(labels = scales::percent_format(accuracy = 1))
+```
+
+
+- We see that churn is higher in the east region.
+- Central and West are doing okay
+
+Gender
+
+    
+```{r}
+data %>% filter(Gender == "Neutral")
+```
+
+```{r}
+
+data$Gender[data$RowNumber == 17] <- "Female"
+data$Gender[data$RowNumber == 34] <- "Female"
+data$Gender[data$RowNumber == 226] <- "Female"
+data$Gender[data$RowNumber == 380] <- "Female"
+data$Gender[data$Gender == "Neutral"] <- "Male"
+summary(data)
+```
+
+```{r}
+data %>% group_by(Gender, Exited) %>% summarise(Percent = round(n()/nrow(.),2)) %>% ggplot(aes(x = Gender, y = Percent, fill = factor(Exited))) + geom_bar(stat = "identity") + geom_text(aes(label = Percent * 100), vjust = 1.5, hjust = 0.5,color = "white", size = 5.0) + theme_minimal() +
+  scale_fill_manual(values = cb_palette) + scale_y_continuous(labels = scales::percent_format(accuracy = 1))
+```
+
+- The churn rate is higher in female clients than in male clients.
+- The proportion of male clients retained is higher than the female clients.
+- The proportion of Neutral gender is equal
+
+Age
+Looks like we have outliers in age 
+
+```{r}
+ggplot(data, aes(x = factor(Exited), y = Age, fill = factor(Exited))) + 
+  geom_boxplot() +
+  stat_summary(fun = "mean", geom = "point", shape = 8,
+               size = 2, color = "black")+
+  scale_fill_manual(values = cb_palette)
+  
+  
+  
+```
+1. We can see some noise in the Age column for the clients who are retained. That is age cannot be 190, there is one other client with age 101.
+2. There is literally one client with 30y tenure and we see that as an outlier in our plot.
+
+Let's deepdive in to the outliers 
+
+```{r}
+ceiling(mean(data$Age[data$Gender == "Male" & data$Geography == "West"]))
+data$Age[data$Age > 100] <- ceiling(mean(data$Age[data$Gender == "Male" & data$Geography == "West"]))
+summary(data)
+```
+
+Tenure
+
+```{r}
+data %>% group_by(Tenure, Exited) %>% summarise(Percent = round(n()/nrow(.),2)) %>% ggplot(aes(x = Tenure, y = Percent, fill = factor(Exited))) + geom_bar(stat = "identity") + geom_text(aes(label = Percent * 100), vjust = 1.5, hjust = 0.5,color = "white", size = 5.0) + theme_minimal() +
+  scale_fill_manual(values = cb_palette) + scale_y_continuous(labels = scales::percent_format(accuracy = 1))
+```
+
+```{r}
+ggplot(data, aes(x = factor(Exited), y = Tenure, fill = factor(Exited))) + 
+  geom_boxplot() +
+  stat_summary(fun = "mean", geom = "point", shape = 8,
+               size = 2, color = "black")+
+  scale_fill_manual(values = cb_palette)
+  
+  
+  
+```
+Balance
+```{r}
+ggplot(data, aes(x = factor(Exited), y = Balance, fill = factor(Exited))) + 
+  geom_boxplot() +
+  stat_summary(fun = "mean", geom = "point", shape = 8,
+               size = 2, color = "black")+
+  scale_fill_manual(values = cb_palette)
+  
+  
+  
+```
+NumOfProducts
+
+```{r}
+data %>% group_by(NumOfProducts, Exited) %>% summarise(Percent = round(n()/nrow(.),2)) %>% ggplot(aes(x = NumOfProducts, y = Percent, fill = factor(Exited))) + geom_bar(stat = "identity") + geom_text(aes(label = Percent * 100), vjust = 1.5, hjust = 0.5,color = "white", size = 5.0) + theme_minimal() +
+  scale_fill_manual(values = cb_palette) + scale_y_continuous(labels = scales::percent_format(accuracy = 1))
+```
+EstimatedSalary
+
+```{r}
+ggplot(data, aes(x = factor(Exited), y = EstimatedSalary, fill = factor(Exited))) + 
+  geom_boxplot() +
+  stat_summary(fun = "mean", geom = "point", shape = 8, size = 2, color = "black")+
+  scale_fill_manual(values = cb_palette)
+
+ggplot(data, aes(x=EstimatedSalary)) + 
+  geom_histogram()
+```
+
+```{r}
+
+fit <- glm(formula = Exited ~ CreditScore + Geography + Gender + Age + Tenure+ Balance + NumOfProducts + HasChckng + IsActiveMember + EstimatedSalary, family = binomial, data = data)
+summary(fit)
+```
+Significant variables, for this specific model, are those with a p-value less than 0.05.
+
+```{r}
+coefs <- tidy(fit, conf.int = TRUE)
+ggplot(coefs[-1, ], aes(x = estimate, y = term, xmin = conf.low, xmax = conf.high)) +
+  geom_point() + geom_errorbarh() + geom_vline(xintercept = 0) + labs(y="Features") + ggtitle("Confidence interval of estimates for each term")
+
+```
+
+
+
+
+```{r}
+ggplot(data = data, aes(x = NumOfProducts, y = Age, color= factor(Exited), shape= factor(Exited))) + 
+  geom_point() +
+  facet_wrap(~Geography) 
+  
+```
+```{r}
+ggplot(data = data, aes(x = NumOfProducts, y = Age, color= factor(Exited), shape= factor(Exited))) + 
+  geom_point() +
+  facet_wrap(~IsActiveMember) 
+  
+```
+```{r}
+ggplot(data = data, aes(x = NumOfProducts, y = Age, color= factor(Exited), shape= factor(Exited))) + 
+  geom_point() +
+  facet_wrap(~Gender) 
+  
+```
+```{r}
+ggplot(data = data, aes(x = Balance, y = Age, color=factor(Exited), shape= factor(Exited))) + 
+  geom_point() +
+  facet_wrap(~Gender)
+```
+
+
+
+
+
+
+
+```{r}
+# Age
+ggplot(data, aes(x = Age, y = Exited, color = factor(Exited))) +
+  geom_jitter(width = 0, height = 0.1) + ggtitle("Likelihood of Churn")+ 
+  scale_color_manual(name="Churn",values = c("0"="darkorange","1"="deepskyblue1")) 
+#+  scale_y_continuous(breaks=c(0,1))
+
+
+
+
+
+```
+
+```{r}
+ggplot(data, aes(x = Age, fill = factor(Exited))) +
+  geom_histogram(breaks = seq(25, 75, 5), position = 'fill') +
+  ggtitle("Likelihood of churn")+ 
+  guides(fill=guide_legend(title="Churn")) + ylab('Probability')
+```
+
+```{r}
+
+
+gg = ggplot(data, aes(x = Age, y = Exited)) +
+  geom_jitter(width = 0, height = 0.1) +
+  geom_smooth(method = "loess",aes(color='loess'))
+
+gg + geom_smooth(method = "glm", method.args = list(family = "binomial"), aes(color = "logistic")) + 
+  scale_color_manual(name="Fit",values = c("loess"="darkorange","logistic"="deepskyblue1"))+   ggtitle("Loess and logistic Fit")
+
+```
+```{r}
+
+
+gg = ggplot(data, aes(x = Balance, y = Exited)) +
+  geom_jitter(width = 0, height = 0.1) +
+  geom_smooth(method = "loess",aes(color='loess'))
+
+gg + geom_smooth(method = "glm", method.args = list(family = "binomial"), aes(color = "logistic")) + 
+  scale_color_manual(name="Fit",values = c("loess"="darkorange","logistic"="deepskyblue1"))+   ggtitle("Loess and logistic Fit")
+
+```
+
+```{r}
+data.logit = glm(Exited ~ Age + NumOfProducts, family = "binomial", data = data)
+
+summary(data.logit)
+
+```
+```{r}
+
+grid_df = expand.grid(Age = 5:95, NumOfProducts = seq(1, 4, 1))
+grid_preds = augment(data.logit, type.predict = "response", newdata = grid_df)
+ggplot(grid_preds, aes(x = Age, y = .fitted, group = factor(NumOfProducts), color = factor(NumOfProducts))) +
+  geom_line() +
+  xlab("Age") +
+  ylab("Probability of churn") +
+  labs(color = "NumOfProducts")+
+  scale_color_manual(values = cb_palette)+
+  ggtitle("Age vs Probability of churn for each values of NumOfProducts") 
+
+
+```
+```{r}
+grid_df2 = expand.grid(Age = seq(5, 95, 5), NumOfProducts = seq(1, 4, 1))
+grid_preds = augment(data.logit, type.predict = "response", newdata = grid_df2)
+ggplot(grid_preds, aes(x = NumOfProducts, y = .fitted, group = Age, color = Age)) +
+  geom_line() +
+  xlab("NumberOfProducts") +
+  ylab("Probability of churn") +
+  labs(color = "Age")+  
+  
+  #scale_x_continuous(breaks=c(-3,0,3,6,9)) +
+  scale_color_viridis_c()+
+  ggtitle("NumberOfProducts vs Probability of churn for each groups of Age")
+```
+
+
+```{r}
+data.logit = glm(Exited ~ Age + Balance, family = "binomial", data = data)
+
+summary(data.logit)
+
+```
+
+```{r}
+
+grid_df = expand.grid(Age = 5:95, Balance = seq(0,250898, 1000))
+grid_preds = augment(data.logit, type.predict = "response", newdata = grid_df)
+ggplot(grid_preds, aes(x = Age, y = .fitted, group = Balance, color = Balance)) +
+  geom_line() +
+  xlab("Age") +
+  ylab("Probability of churn") +
+  labs(color = "Balance")+
+  scale_color_viridis_c()+
+  ggtitle("Age vs Probability of churn for each values of Balance") 
+
+
+```
+
+```{r}
+grid_df2 = expand.grid(Age = seq(5, 95, 5), Balance = seq(0, 250898, 1000))
+grid_preds = augment(data.logit, type.predict = "response", newdata = grid_df2)
+ggplot(grid_preds, aes(x = Balance, y = .fitted, group = Age, color = Age)) +
+  geom_line() +
+  xlab("Balance") +
+  ylab("Probability of churn") +
+  labs(color = "Age")+  
+  scale_color_viridis_c()+
+  ggtitle("Balance vs Probability of churn for each groups of Age")
+```
+
+```{r}
+data
+```
+
+
+```{r}
+data.logit = glm(Exited ~ NumOfProducts + Balance, family = "binomial", data = data)
+
+summary(data.logit)
+
+```
+
+
+```{r}
+
+grid_df = expand.grid(NumOfProducts = c(1,2,3,4), Balance = seq(0,250898, 1000))
+grid_preds = augment(data.logit, type.predict = "response", newdata = grid_df)
+ggplot(grid_preds, aes(x = NumOfProducts, y = .fitted, group = Balance, color = Balance)) +
+  geom_line() +
+  xlab("NumOfProducts") +
+  ylab("Probability of churn") +
+  labs(color = "Balance")+
+  scale_color_viridis_c()+
+  ggtitle("NumOfProducts vs Probability of churn for each values of Balance") 
+
+
+```
+
+
+
+```{r}
+grid_df2 = expand.grid(NumOfProducts = c(1,2,3,4), Balance = seq(0, 250898, 1000))
+grid_preds = augment(data.logit, type.predict = "response", newdata = grid_df2)
+ggplot(grid_preds, aes(x = Balance, y = .fitted, group = NumOfProducts, color = NumOfProducts)) +
+  geom_line() +
+  xlab("Balance") +
+  ylab("Probability of churn") +
+  labs(color = "Age")+  
+  scale_color_viridis_c()+
+  ggtitle("Balance vs Probability of churn for each groups of NumOfProducts")
+```
+
+
+
+
+```{r}
+data.logit.lot <- glm(Exited ~ Age + Balance + NumOfProducts + IsActiveMember + Gender+ Geography, family = "binomial", data =data)
+summary(data.logit.lot)
+
+data_model_df = augment(data.logit.lot, type.residuals = "pearson")
+ggplot(data_model_df, aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_smooth(method = "loess", method.args = list(degree = 1)) +
+  xlab("Fitted values") +
+  ylab("Residuals") + ggtitle("Residual plot of FittedValues vs Residuals")
+
+ggplot(data_model_df, aes(x = Age, y = .resid)) +
+  geom_point() +
+  geom_smooth(method = "loess", method.args = list(degree = 1)) +
+  xlab("Age") +
+  ylab("Residuals")
+
+ggplot(data_model_df, aes(x = NumOfProducts, y = .resid)) +
+  geom_point() +
+  geom_smooth(method = "loess", method.args = list(degree = 1)) +
+  xlab("NumOfProducts") +
+  ylab("Residuals")
+```
+
